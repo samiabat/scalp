@@ -12,6 +12,7 @@ riskPercent = input.float(0.5, "Risk Percent per Trade (%)", minval=0, maxval=10
 stopLossPips = input.float(15, "Stop Loss (Pips)", minval=1, step=1, group="Risk Management")
 takeProfit1Pips = input.float(20, "Take Profit 1 (Pips)", minval=1, step=1, group="Risk Management")
 takeProfit2Pips = input.float(40, "Take Profit 2 (Pips)", minval=1, step=1, group="Risk Management")
+maxTradesPerDay = input.int(10, "Max Trades Per Day", minval=0, step=1, group="Risk Management", tooltip="0 = unlimited")
 maxSpread = input.float(30, "Max Spread (Points)", minval=0, step=1, group="Risk Management")
 enableTradingHours = input.bool(false, "Enable Trading Hours", group="Trading Hours")
 tradeStartHour = input.int(0, "Trade Start Hour (0-23)", minval=0, maxval=23, group="Trading Hours")
@@ -103,10 +104,28 @@ bearishSetup = bearishBias and (nearR1 or nearPP) and bearishPatternConfirmed
 spreadOK = true  // Assume spread is OK for backtesting purposes
 
 // ═══════════════════════════════════════════════════════════════
+// DAILY TRADE LIMIT TRACKING
+// ═══════════════════════════════════════════════════════════════
+var int tradesCountToday = 0
+var int lastTradeDay = 0
+
+// Reset counter on new day
+if (dayofmonth != lastTradeDay)
+    tradesCountToday := 0
+    lastTradeDay := dayofmonth
+
+// Check if daily limit reached
+dailyLimitOK = maxTradesPerDay <= 0 or tradesCountToday < maxTradesPerDay
+
+// ═══════════════════════════════════════════════════════════════
 // ENTRY SIGNALS
 // ═══════════════════════════════════════════════════════════════
-longSignal = bullishSetup and isTradingHourAllowed() and spreadOK and barstate.isconfirmed
-shortSignal = bearishSetup and isTradingHourAllowed() and spreadOK and barstate.isconfirmed
+longSignal = bullishSetup and isTradingHourAllowed() and spreadOK and dailyLimitOK and barstate.isconfirmed
+shortSignal = bearishSetup and isTradingHourAllowed() and spreadOK and dailyLimitOK and barstate.isconfirmed
+
+// Increment counter when signal fires
+if (longSignal or shortSignal)
+    tradesCountToday := tradesCountToday + 1
 
 // ═══════════════════════════════════════════════════════════════
 // STOP LOSS AND TAKE PROFIT CALCULATIONS
@@ -172,6 +191,14 @@ plotshape(bullishEngulfingDetected, "Bullish Engulf", shape.circle, location.bel
 // Plot bearish engulfing
 plotshape(bearishEngulfingDetected, "Bearish Engulf", shape.circle, location.abovebar, color.new(color.orange, 50), size=size.tiny)
 
+// Plot Stop Loss and Take Profit levels for visual reference
+plot(longSignal ? longStopLoss : na, "Long SL", color=color.red, style=plot.style_cross, linewidth=2)
+plot(longSignal ? longTP1 : na, "Long TP1", color=color.green, style=plot.style_cross, linewidth=1)
+plot(longSignal ? longTP2 : na, "Long TP2", color=color.blue, style=plot.style_cross, linewidth=1)
+plot(shortSignal ? shortStopLoss : na, "Short SL", color=color.red, style=plot.style_cross, linewidth=2)
+plot(shortSignal ? shortTP1 : na, "Short TP1", color=color.green, style=plot.style_cross, linewidth=1)
+plot(shortSignal ? shortTP2 : na, "Short TP2", color=color.blue, style=plot.style_cross, linewidth=1)
+
 // ═══════════════════════════════════════════════════════════════
 // BACKGROUND COLORING FOR MARKET BIAS
 // ═══════════════════════════════════════════════════════════════
@@ -184,9 +211,9 @@ alertcondition(longSignal, title="Long Signal Alert", message="PivotCandleScalpe
 alertcondition(shortSignal, title="Short Signal Alert", message="PivotCandleScalper: SELL signal detected!")
 
 // ═══════════════════════════════════════════════════════════════
-// INFORMATION TABLE (Optional - displays current pivot levels)
+// INFORMATION TABLE (displays current pivot levels and trade count)
 // ═══════════════════════════════════════════════════════════════
-var table infoTable = table.new(position.top_right, 2, 6, border_width=1)
+var table infoTable = table.new(position.top_right, 2, 7, border_width=1)
 if barstate.islast
     table.cell(infoTable, 0, 0, "Level", bgcolor=color.gray, text_color=color.white)
     table.cell(infoTable, 1, 0, "Price", bgcolor=color.gray, text_color=color.white)
@@ -200,3 +227,5 @@ if barstate.islast
     table.cell(infoTable, 1, 4, str.tostring(S1, format.mintick), bgcolor=color.new(color.green, 60))
     table.cell(infoTable, 0, 5, "S2", bgcolor=color.new(color.green, 80))
     table.cell(infoTable, 1, 5, str.tostring(S2, format.mintick), bgcolor=color.new(color.green, 80))
+    table.cell(infoTable, 0, 6, "Trades Today", bgcolor=color.blue)
+    table.cell(infoTable, 1, 6, str.tostring(tradesCountToday) + "/" + str.tostring(maxTradesPerDay > 0 ? maxTradesPerDay : "∞"), bgcolor=color.blue)
