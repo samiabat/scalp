@@ -1,0 +1,172 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © PivotCandleScalper 2025
+
+//@version=5
+indicator("PivotCandleScalper Indicator", overlay=true)
+
+// ═══════════════════════════════════════════════════════════════
+// INPUT PARAMETERS
+// ═══════════════════════════════════════════════════════════════
+stopLossPips = input.float(15, "Stop Loss (Pips)", minval=1, step=1, group="Risk Management")
+takeProfit1Pips = input.float(20, "Take Profit 1 (Pips)", minval=1, step=1, group="Risk Management")
+takeProfit2Pips = input.float(40, "Take Profit 2 (Pips)", minval=1, step=1, group="Risk Management")
+showLevels = input.bool(true, "Show Entry/SL/TP Levels", group="Display")
+levelBars = input.int(10, "Show Levels for Bars", minval=1, maxval=50, group="Display")
+
+// ═══════════════════════════════════════════════════════════════
+// PIVOT POINT CALCULATIONS
+// ═══════════════════════════════════════════════════════════════
+prevDayHigh = request.security(syminfo.tickerid, "D", high[1], barmerge.gaps_off, barmerge.lookahead_on)
+prevDayLow = request.security(syminfo.tickerid, "D", low[1], barmerge.gaps_off, barmerge.lookahead_on)
+prevDayClose = request.security(syminfo.tickerid, "D", close[1], barmerge.gaps_off, barmerge.lookahead_on)
+
+PP = (prevDayHigh + prevDayLow + prevDayClose) / 3
+R1 = 2 * PP - prevDayLow
+R2 = PP + (prevDayHigh - prevDayLow)
+S1 = 2 * PP - prevDayHigh
+S2 = PP - (prevDayHigh - prevDayLow)
+
+// Plot pivot levels
+plot(PP, "Pivot Point", color=color.yellow, linewidth=2, style=plot.style_line)
+plot(R1, "Resistance 1", color=color.red, linewidth=1, style=plot.style_line)
+plot(R2, "Resistance 2", color=color.new(color.red, 50), linewidth=1, style=plot.style_line)
+plot(S1, "Support 1", color=color.green, linewidth=1, style=plot.style_line)
+plot(S2, "Support 2", color=color.new(color.green, 50), linewidth=1, style=plot.style_line)
+
+// ═══════════════════════════════════════════════════════════════
+// SYMBOL-SPECIFIC PIP CALCULATIONS
+// ═══════════════════════════════════════════════════════════════
+pipValue = syminfo.type == "forex" ? (syminfo.mintick * 10) : syminfo.mintick
+
+// ═══════════════════════════════════════════════════════════════
+// CANDLESTICK PATTERN DETECTION FUNCTIONS
+// ═══════════════════════════════════════════════════════════════
+isBullishPinBar(o, h, l, c) => body = math.abs(c - o), totalRange = h - l, lowerWick = math.min(o, c) - l, upperWick = h - math.max(o, c), totalRange > 0 and lowerWick >= (2 * body) and upperWick <= (0.3 * totalRange)
+
+isBearishPinBar(o, h, l, c) => body = math.abs(c - o), totalRange = h - l, lowerWick = math.min(o, c) - l, upperWick = h - math.max(o, c), totalRange > 0 and upperWick >= (2 * body) and lowerWick <= (0.3 * totalRange)
+
+isBullishEngulfing() => close[1] > open[1] and close[2] < open[2] and open[1] < close[2] and close[1] > open[2]
+
+isBearishEngulfing() => close[1] < open[1] and close[2] > open[2] and open[1] > close[2] and close[1] < open[2]
+
+// ═══════════════════════════════════════════════════════════════
+// MARKET BIAS DETERMINATION
+// ═══════════════════════════════════════════════════════════════
+bullishBias = close > PP
+bearishBias = close < PP
+
+// ═══════════════════════════════════════════════════════════════
+// PRICE LEVEL DETECTION (Near S1, PP, or R1)
+// ═══════════════════════════════════════════════════════════════
+tolerance = 5 * pipValue
+nearS1 = math.abs(close - S1) <= tolerance
+nearPP = math.abs(close - PP) <= tolerance
+nearR1 = math.abs(close - R1) <= tolerance
+
+// ═══════════════════════════════════════════════════════════════
+// SIGNAL DETECTION
+// ═══════════════════════════════════════════════════════════════
+bullishPinDetected = isBullishPinBar(open[1], high[1], low[1], close[1])
+bullishEngulfingDetected = isBullishEngulfing()
+bullishPatternConfirmed = bullishPinDetected or bullishEngulfingDetected
+bullishSetup = bullishBias and (nearS1 or nearPP) and bullishPatternConfirmed
+
+bearishPinDetected = isBearishPinBar(open[1], high[1], low[1], close[1])
+bearishEngulfingDetected = isBearishEngulfing()
+bearishPatternConfirmed = bearishPinDetected or bearishEngulfingDetected
+bearishSetup = bearishBias and (nearR1 or nearPP) and bearishPatternConfirmed
+
+// Confirm signals on bar close
+longSignal = bullishSetup and barstate.isconfirmed
+shortSignal = bearishSetup and barstate.isconfirmed
+
+// ═══════════════════════════════════════════════════════════════
+// CALCULATE ENTRY, SL, AND TP LEVELS
+// ═══════════════════════════════════════════════════════════════
+var float entryLevel = na
+var float stopLossLevel = na
+var float tp1Level = na
+var float tp2Level = na
+var int signalBar = na
+
+// Long signal levels
+if (longSignal)
+    entryLevel := close
+    stopLossLevel := low[1] - (2 * pipValue)
+    tp1Level := entryLevel + (takeProfit1Pips * pipValue)
+    tp2Level := entryLevel + (takeProfit2Pips * pipValue)
+    signalBar := bar_index
+
+// Short signal levels
+if (shortSignal)
+    entryLevel := close
+    stopLossLevel := high[1] + (2 * pipValue)
+    tp1Level := entryLevel - (takeProfit1Pips * pipValue)
+    tp2Level := entryLevel - (takeProfit2Pips * pipValue)
+    signalBar := bar_index
+
+// Clear levels after specified number of bars
+if (not na(signalBar) and bar_index > signalBar + levelBars)
+    entryLevel := na
+    stopLossLevel := na
+    tp1Level := na
+    tp2Level := na
+    signalBar := na
+
+// ═══════════════════════════════════════════════════════════════
+// PLOT SIGNALS
+// ═══════════════════════════════════════════════════════════════
+plotshape(longSignal, "Buy Signal", shape.triangleup, location.belowbar, color.lime, size=size.normal)
+plotshape(shortSignal, "Sell Signal", shape.triangledown, location.abovebar, color.red, size=size.normal)
+
+// ═══════════════════════════════════════════════════════════════
+// PLOT ENTRY, SL, AND TP LEVELS
+// ═══════════════════════════════════════════════════════════════
+plot(showLevels ? entryLevel : na, "Entry (E)", color=color.new(color.yellow, 20), linewidth=2, style=plot.style_cross)
+plot(showLevels ? stopLossLevel : na, "Stop Loss (SL)", color=color.new(color.red, 0), linewidth=2, style=plot.style_line)
+plot(showLevels ? tp1Level : na, "Take Profit 1 (TP1)", color=color.new(color.lime, 0), linewidth=1, style=plot.style_line)
+plot(showLevels ? tp2Level : na, "Take Profit 2 (TP2)", color=color.new(color.blue, 0), linewidth=1, style=plot.style_line)
+
+// ═══════════════════════════════════════════════════════════════
+// LABELS FOR LEVELS
+// ═══════════════════════════════════════════════════════════════
+if (longSignal and showLevels)
+    label.new(bar_index, entryLevel, "E: " + str.tostring(entryLevel, format.mintick), style=label.style_label_left, color=color.yellow, textcolor=color.black, size=size.small)
+    label.new(bar_index, stopLossLevel, "SL: " + str.tostring(stopLossLevel, format.mintick), style=label.style_label_left, color=color.red, textcolor=color.white, size=size.small)
+    label.new(bar_index, tp1Level, "TP1: " + str.tostring(tp1Level, format.mintick), style=label.style_label_left, color=color.lime, textcolor=color.black, size=size.small)
+    label.new(bar_index, tp2Level, "TP2: " + str.tostring(tp2Level, format.mintick), style=label.style_label_left, color=color.blue, textcolor=color.white, size=size.small)
+
+if (shortSignal and showLevels)
+    label.new(bar_index, entryLevel, "E: " + str.tostring(entryLevel, format.mintick), style=label.style_label_left, color=color.yellow, textcolor=color.black, size=size.small)
+    label.new(bar_index, stopLossLevel, "SL: " + str.tostring(stopLossLevel, format.mintick), style=label.style_label_left, color=color.red, textcolor=color.white, size=size.small)
+    label.new(bar_index, tp1Level, "TP1: " + str.tostring(tp1Level, format.mintick), style=label.style_label_left, color=color.lime, textcolor=color.black, size=size.small)
+    label.new(bar_index, tp2Level, "TP2: " + str.tostring(tp2Level, format.mintick), style=label.style_label_left, color=color.blue, textcolor=color.white, size=size.small)
+
+// ═══════════════════════════════════════════════════════════════
+// BACKGROUND COLORING FOR MARKET BIAS
+// ═══════════════════════════════════════════════════════════════
+bgcolor(bullishBias ? color.new(color.green, 95) : bearishBias ? color.new(color.red, 95) : na, title="Market Bias")
+
+// ═══════════════════════════════════════════════════════════════
+// ALERT CONDITIONS
+// ═══════════════════════════════════════════════════════════════
+alertcondition(longSignal, title="Buy Signal Alert", message="PivotCandleScalper: BUY signal at {{close}}! Entry={{close}}, SL={{low}}, TP1={{close}}+TP1, TP2={{close}}+TP2")
+alertcondition(shortSignal, title="Sell Signal Alert", message="PivotCandleScalper: SELL signal at {{close}}! Entry={{close}}, SL={{high}}, TP1={{close}}-TP1, TP2={{close}}-TP2")
+
+// ═══════════════════════════════════════════════════════════════
+// INFORMATION TABLE
+// ═══════════════════════════════════════════════════════════════
+var table infoTable = table.new(position.top_right, 2, 6, border_width=1)
+if barstate.islast
+    table.cell(infoTable, 0, 0, "Level", bgcolor=color.gray, text_color=color.white)
+    table.cell(infoTable, 1, 0, "Price", bgcolor=color.gray, text_color=color.white)
+    table.cell(infoTable, 0, 1, "R2", bgcolor=color.new(color.red, 80))
+    table.cell(infoTable, 1, 1, str.tostring(R2, format.mintick), bgcolor=color.new(color.red, 80))
+    table.cell(infoTable, 0, 2, "R1", bgcolor=color.new(color.red, 60))
+    table.cell(infoTable, 1, 2, str.tostring(R1, format.mintick), bgcolor=color.new(color.red, 60))
+    table.cell(infoTable, 0, 3, "PP", bgcolor=color.yellow, text_color=color.black)
+    table.cell(infoTable, 1, 3, str.tostring(PP, format.mintick), bgcolor=color.yellow, text_color=color.black)
+    table.cell(infoTable, 0, 4, "S1", bgcolor=color.new(color.green, 60))
+    table.cell(infoTable, 1, 4, str.tostring(S1, format.mintick), bgcolor=color.new(color.green, 60))
+    table.cell(infoTable, 0, 5, "S2", bgcolor=color.new(color.green, 80))
+    table.cell(infoTable, 1, 5, str.tostring(S2, format.mintick), bgcolor=color.new(color.green, 80))
