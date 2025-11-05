@@ -18,6 +18,12 @@ enableTradingHours = input.bool(false, "Enable Trading Hours", group="Trading Ho
 tradeStartHour = input.int(0, "Trade Start Hour (0-23)", minval=0, maxval=23, group="Trading Hours")
 tradeEndHour = input.int(23, "Trade End Hour (0-23)", minval=0, maxval=23, group="Trading Hours")
 
+// Display settings
+showPivots = input.bool(true, "Show Pivot Levels", group="Display")
+showSignals = input.bool(true, "Show Buy/Sell Signals", group="Display")
+showSLTP = input.bool(false, "Show SL/TP Lines", group="Display", tooltip="Disable to reduce chart clutter")
+showPatterns = input.bool(false, "Show Pattern Indicators", group="Display", tooltip="Disable to reduce chart clutter")
+
 // ═══════════════════════════════════════════════════════════════
 // PIVOT POINT CALCULATIONS
 // ═══════════════════════════════════════════════════════════════
@@ -33,18 +39,22 @@ R2 = PP + (prevDayHigh - prevDayLow)
 S1 = 2 * PP - prevDayHigh
 S2 = PP - (prevDayHigh - prevDayLow)
 
-// Plot pivot levels
-plot(PP, "Pivot Point", color=color.yellow, linewidth=2, style=plot.style_line)
-plot(R1, "Resistance 1", color=color.red, linewidth=1, style=plot.style_line)
-plot(R2, "Resistance 2", color=color.new(color.red, 50), linewidth=1, style=plot.style_line)
-plot(S1, "Support 1", color=color.green, linewidth=1, style=plot.style_line)
-plot(S2, "Support 2", color=color.new(color.green, 50), linewidth=1, style=plot.style_line)
+// Plot pivot levels (optional)
+plot(showPivots ? PP : na, "Pivot Point", color=color.yellow, linewidth=2, style=plot.style_line)
+plot(showPivots ? R1 : na, "Resistance 1", color=color.red, linewidth=1, style=plot.style_line)
+plot(showPivots ? R2 : na, "Resistance 2", color=color.new(color.red, 50), linewidth=1, style=plot.style_line)
+plot(showPivots ? S1 : na, "Support 1", color=color.green, linewidth=1, style=plot.style_line)
+plot(showPivots ? S2 : na, "Support 2", color=color.new(color.green, 50), linewidth=1, style=plot.style_line)
 
 // ═══════════════════════════════════════════════════════════════
 // SYMBOL-SPECIFIC PIP CALCULATIONS
 // ═══════════════════════════════════════════════════════════════
 // Calculate pip value based on symbol type
-pipValue = syminfo.type == "forex" ? (syminfo.mintick * 10) : syminfo.mintick
+// For forex: 0.0001 (or 0.01 for JPY pairs)
+// For metals like XAUUSD: 0.1 or 0.01 depending on broker
+// For indices and crypto: use mintick
+isPreciousMetal = str.contains(syminfo.ticker, "XAU") or str.contains(syminfo.ticker, "XAG") or str.contains(syminfo.ticker, "GOLD") or str.contains(syminfo.ticker, "SILVER")
+pipValue = isPreciousMetal ? 0.1 : (syminfo.type == "forex" ? (syminfo.mintick * 10) : syminfo.mintick)
 
 // ═══════════════════════════════════════════════════════════════
 // CANDLESTICK PATTERN DETECTION FUNCTIONS
@@ -143,9 +153,14 @@ shortTP2 = close - (takeProfit2Pips * pipValue)
 // ═══════════════════════════════════════════════════════════════
 // POSITION SIZING
 // ═══════════════════════════════════════════════════════════════
-// Calculate position size based on risk percent
-// In TradingView, we use percentage of equity
-positionSizePercent = riskPercent > 0 ? riskPercent : 1.0
+// Calculate position size based on risk percent and stop loss distance
+// For long trades
+longSLDistance = math.abs(close - longStopLoss) / pipValue
+longPositionSize = riskPercent > 0 ? riskPercent : lotSize * 100
+
+// For short trades
+shortSLDistance = math.abs(shortStopLoss - close) / pipValue
+shortPositionSize = riskPercent > 0 ? riskPercent : lotSize * 100
 
 // ═══════════════════════════════════════════════════════════════
 // STRATEGY EXECUTION
@@ -153,56 +168,48 @@ positionSizePercent = riskPercent > 0 ? riskPercent : 1.0
 // Long Entry - Split into two positions (50% each for TP1 and TP2)
 if (longSignal)
     // First 50% position with TP1
-    strategy.entry("Long_TP1", strategy.long, qty=50, comment="Buy TP1")
+    strategy.entry("Long_TP1", strategy.long, qty=longPositionSize/2, comment="Buy TP1")
     strategy.exit("Exit_Long_TP1", "Long_TP1", stop=longStopLoss, limit=longTP1)
     
     // Second 50% position with TP2
-    strategy.entry("Long_TP2", strategy.long, qty=50, comment="Buy TP2")
+    strategy.entry("Long_TP2", strategy.long, qty=longPositionSize/2, comment="Buy TP2")
     strategy.exit("Exit_Long_TP2", "Long_TP2", stop=longStopLoss, limit=longTP2)
 
 // Short Entry - Split into two positions (50% each for TP1 and TP2)
 if (shortSignal)
     // First 50% position with TP1
-    strategy.entry("Short_TP1", strategy.short, qty=50, comment="Sell TP1")
+    strategy.entry("Short_TP1", strategy.short, qty=shortPositionSize/2, comment="Sell TP1")
     strategy.exit("Exit_Short_TP1", "Short_TP1", stop=shortStopLoss, limit=shortTP1)
     
     // Second 50% position with TP2
-    strategy.entry("Short_TP2", strategy.short, qty=50, comment="Sell TP2")
+    strategy.entry("Short_TP2", strategy.short, qty=shortPositionSize/2, comment="Sell TP2")
     strategy.exit("Exit_Short_TP2", "Short_TP2", stop=shortStopLoss, limit=shortTP2)
 
 // ═══════════════════════════════════════════════════════════════
 // VISUAL SIGNALS ON CHART
 // ═══════════════════════════════════════════════════════════════
-// Plot buy signals
-plotshape(longSignal, "Buy Signal", shape.triangleup, location.belowbar, color.green, size=size.small)
+// Plot buy/sell signals (optional)
+plotshape(showSignals and longSignal, "Buy Signal", shape.triangleup, location.belowbar, color.green, size=size.small)
+plotshape(showSignals and shortSignal, "Sell Signal", shape.triangledown, location.abovebar, color.red, size=size.small)
 
-// Plot sell signals
-plotshape(shortSignal, "Sell Signal", shape.triangledown, location.abovebar, color.red, size=size.small)
+// Plot pattern indicators (optional - off by default to reduce clutter)
+plotshape(showPatterns and bullishPinDetected, "Bullish Pin", shape.diamond, location.belowbar, color.new(color.green, 50), size=size.tiny)
+plotshape(showPatterns and bearishPinDetected, "Bearish Pin", shape.diamond, location.abovebar, color.new(color.red, 50), size=size.tiny)
+plotshape(showPatterns and bullishEngulfingDetected, "Bullish Engulf", shape.circle, location.belowbar, color.new(color.blue, 50), size=size.tiny)
+plotshape(showPatterns and bearishEngulfingDetected, "Bearish Engulf", shape.circle, location.abovebar, color.new(color.orange, 50), size=size.tiny)
 
-// Plot bullish pin bars
-plotshape(bullishPinDetected, "Bullish Pin", shape.diamond, location.belowbar, color.new(color.green, 50), size=size.tiny)
-
-// Plot bearish pin bars
-plotshape(bearishPinDetected, "Bearish Pin", shape.diamond, location.abovebar, color.new(color.red, 50), size=size.tiny)
-
-// Plot bullish engulfing
-plotshape(bullishEngulfingDetected, "Bullish Engulf", shape.circle, location.belowbar, color.new(color.blue, 50), size=size.tiny)
-
-// Plot bearish engulfing
-plotshape(bearishEngulfingDetected, "Bearish Engulf", shape.circle, location.abovebar, color.new(color.orange, 50), size=size.tiny)
-
-// Plot Stop Loss and Take Profit levels for visual reference
-plot(longSignal ? longStopLoss : na, "Long SL", color=color.red, style=plot.style_cross, linewidth=2)
-plot(longSignal ? longTP1 : na, "Long TP1", color=color.green, style=plot.style_cross, linewidth=1)
-plot(longSignal ? longTP2 : na, "Long TP2", color=color.blue, style=plot.style_cross, linewidth=1)
-plot(shortSignal ? shortStopLoss : na, "Short SL", color=color.red, style=plot.style_cross, linewidth=2)
-plot(shortSignal ? shortTP1 : na, "Short TP1", color=color.green, style=plot.style_cross, linewidth=1)
-plot(shortSignal ? shortTP2 : na, "Short TP2", color=color.blue, style=plot.style_cross, linewidth=1)
+// Plot Stop Loss and Take Profit levels (optional - off by default to reduce clutter)
+plot(showSLTP and longSignal ? longStopLoss : na, "Long SL", color=color.red, style=plot.style_cross, linewidth=2)
+plot(showSLTP and longSignal ? longTP1 : na, "Long TP1", color=color.green, style=plot.style_cross, linewidth=1)
+plot(showSLTP and longSignal ? longTP2 : na, "Long TP2", color=color.blue, style=plot.style_cross, linewidth=1)
+plot(showSLTP and shortSignal ? shortStopLoss : na, "Short SL", color=color.red, style=plot.style_cross, linewidth=2)
+plot(showSLTP and shortSignal ? shortTP1 : na, "Short TP1", color=color.green, style=plot.style_cross, linewidth=1)
+plot(showSLTP and shortSignal ? shortTP2 : na, "Short TP2", color=color.blue, style=plot.style_cross, linewidth=1)
 
 // ═══════════════════════════════════════════════════════════════
-// BACKGROUND COLORING FOR MARKET BIAS
+// BACKGROUND COLORING FOR MARKET BIAS (Subtle)
 // ═══════════════════════════════════════════════════════════════
-bgcolor(bullishBias ? color.new(color.green, 95) : bearishBias ? color.new(color.red, 95) : na, title="Market Bias")
+bgcolor(bullishBias ? color.new(color.green, 97) : bearishBias ? color.new(color.red, 97) : na, title="Market Bias")
 
 // ═══════════════════════════════════════════════════════════════
 // ALERT CONDITIONS

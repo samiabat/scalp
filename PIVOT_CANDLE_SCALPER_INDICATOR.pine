@@ -10,10 +10,14 @@ indicator("PivotCandleScalper Indicator", overlay=true)
 stopLossPips = input.float(15, "Stop Loss (Pips)", minval=1, step=1, group="Risk Management")
 takeProfit1Pips = input.float(20, "Take Profit 1 (Pips)", minval=1, step=1, group="Risk Management")
 takeProfit2Pips = input.float(40, "Take Profit 2 (Pips)", minval=1, step=1, group="Risk Management")
-showLevels = input.bool(true, "Show Entry/SL/TP Levels", group="Display")
-levelBars = input.int(10, "Show Levels for Bars", minval=1, maxval=50, group="Display")
 tolerancePips = input.float(10, "Pivot Level Tolerance (Pips)", minval=1, maxval=100, step=1, group="Strategy", tooltip="Distance from pivot levels to trigger signals")
 requirePattern = input.bool(false, "Require Candlestick Pattern", group="Strategy", tooltip="If false, signals trigger on pivot touches only")
+
+// Display settings
+showLevels = input.bool(false, "Show Entry/SL/TP Levels", group="Display", tooltip="Disable to reduce clutter")
+levelBars = input.int(10, "Show Levels for Bars", minval=1, maxval=50, group="Display")
+showPivots = input.bool(true, "Show Pivot Levels", group="Display")
+showLabels = input.bool(false, "Show Price Labels", group="Display", tooltip="Disable to reduce clutter")
 
 // ═══════════════════════════════════════════════════════════════
 // PIVOT POINT CALCULATIONS
@@ -28,17 +32,18 @@ R2 = PP + (prevDayHigh - prevDayLow)
 S1 = 2 * PP - prevDayHigh
 S2 = PP - (prevDayHigh - prevDayLow)
 
-// Plot pivot levels
-plot(PP, "Pivot Point", color=color.yellow, linewidth=2, style=plot.style_line)
-plot(R1, "Resistance 1", color=color.red, linewidth=1, style=plot.style_line)
-plot(R2, "Resistance 2", color=color.new(color.red, 50), linewidth=1, style=plot.style_line)
-plot(S1, "Support 1", color=color.green, linewidth=1, style=plot.style_line)
-plot(S2, "Support 2", color=color.new(color.green, 50), linewidth=1, style=plot.style_line)
+// Plot pivot levels (optional)
+plot(showPivots ? PP : na, "Pivot Point", color=color.yellow, linewidth=2, style=plot.style_line)
+plot(showPivots ? R1 : na, "Resistance 1", color=color.red, linewidth=1, style=plot.style_line)
+plot(showPivots ? R2 : na, "Resistance 2", color=color.new(color.red, 50), linewidth=1, style=plot.style_line)
+plot(showPivots ? S1 : na, "Support 1", color=color.green, linewidth=1, style=plot.style_line)
+plot(showPivots ? S2 : na, "Support 2", color=color.new(color.green, 50), linewidth=1, style=plot.style_line)
 
 // ═══════════════════════════════════════════════════════════════
 // SYMBOL-SPECIFIC PIP CALCULATIONS
 // ═══════════════════════════════════════════════════════════════
-pipValue = syminfo.type == "forex" ? (syminfo.mintick * 10) : syminfo.mintick
+isPreciousMetal = str.contains(syminfo.ticker, "XAU") or str.contains(syminfo.ticker, "XAG") or str.contains(syminfo.ticker, "GOLD") or str.contains(syminfo.ticker, "SILVER")
+pipValue = isPreciousMetal ? 0.1 : (syminfo.type == "forex" ? (syminfo.mintick * 10) : syminfo.mintick)
 
 // ═══════════════════════════════════════════════════════════════
 // CANDLESTICK PATTERN DETECTION FUNCTIONS
@@ -134,24 +139,24 @@ plot(showLevels ? tp1Level : na, "Take Profit 1 (TP1)", color=color.new(color.li
 plot(showLevels ? tp2Level : na, "Take Profit 2 (TP2)", color=color.new(color.blue, 0), linewidth=1, style=plot.style_line)
 
 // ═══════════════════════════════════════════════════════════════
-// LABELS FOR LEVELS
+// LABELS FOR LEVELS (Optional - off by default)
 // ═══════════════════════════════════════════════════════════════
-if (longSignal and showLevels)
+if (longSignal and showLevels and showLabels)
     label.new(bar_index, entryLevel, "E: " + str.tostring(entryLevel, format.mintick), style=label.style_label_left, color=color.yellow, textcolor=color.black, size=size.small)
     label.new(bar_index, stopLossLevel, "SL: " + str.tostring(stopLossLevel, format.mintick), style=label.style_label_left, color=color.red, textcolor=color.white, size=size.small)
     label.new(bar_index, tp1Level, "TP1: " + str.tostring(tp1Level, format.mintick), style=label.style_label_left, color=color.lime, textcolor=color.black, size=size.small)
     label.new(bar_index, tp2Level, "TP2: " + str.tostring(tp2Level, format.mintick), style=label.style_label_left, color=color.blue, textcolor=color.white, size=size.small)
 
-if (shortSignal and showLevels)
+if (shortSignal and showLevels and showLabels)
     label.new(bar_index, entryLevel, "E: " + str.tostring(entryLevel, format.mintick), style=label.style_label_left, color=color.yellow, textcolor=color.black, size=size.small)
     label.new(bar_index, stopLossLevel, "SL: " + str.tostring(stopLossLevel, format.mintick), style=label.style_label_left, color=color.red, textcolor=color.white, size=size.small)
     label.new(bar_index, tp1Level, "TP1: " + str.tostring(tp1Level, format.mintick), style=label.style_label_left, color=color.lime, textcolor=color.black, size=size.small)
     label.new(bar_index, tp2Level, "TP2: " + str.tostring(tp2Level, format.mintick), style=label.style_label_left, color=color.blue, textcolor=color.white, size=size.small)
 
 // ═══════════════════════════════════════════════════════════════
-// BACKGROUND COLORING FOR MARKET BIAS
+// BACKGROUND COLORING FOR MARKET BIAS (Subtle)
 // ═══════════════════════════════════════════════════════════════
-bgcolor(bullishBias ? color.new(color.green, 95) : bearishBias ? color.new(color.red, 95) : na, title="Market Bias")
+bgcolor(bullishBias ? color.new(color.green, 97) : bearishBias ? color.new(color.red, 97) : na, title="Market Bias")
 
 // ═══════════════════════════════════════════════════════════════
 // ALERT CONDITIONS
