@@ -12,6 +12,8 @@ takeProfit1Pips = input.float(20, "Take Profit 1 (Pips)", minval=1, step=1, grou
 takeProfit2Pips = input.float(40, "Take Profit 2 (Pips)", minval=1, step=1, group="Risk Management")
 showLevels = input.bool(true, "Show Entry/SL/TP Levels", group="Display")
 levelBars = input.int(10, "Show Levels for Bars", minval=1, maxval=50, group="Display")
+tolerancePips = input.float(10, "Pivot Level Tolerance (Pips)", minval=1, maxval=100, step=1, group="Strategy", tooltip="Distance from pivot levels to trigger signals")
+requirePattern = input.bool(false, "Require Candlestick Pattern", group="Strategy", tooltip="If false, signals trigger on pivot touches only")
 
 // ═══════════════════════════════════════════════════════════════
 // PIVOT POINT CALCULATIONS
@@ -58,7 +60,7 @@ bearishBias = close < PP
 // ═══════════════════════════════════════════════════════════════
 // PRICE LEVEL DETECTION (Near S1, PP, or R1)
 // ═══════════════════════════════════════════════════════════════
-tolerance = 5 * pipValue
+tolerance = tolerancePips * pipValue
 nearS1 = math.abs(close - S1) <= tolerance
 nearPP = math.abs(close - PP) <= tolerance
 nearR1 = math.abs(close - R1) <= tolerance
@@ -69,12 +71,16 @@ nearR1 = math.abs(close - R1) <= tolerance
 bullishPinDetected = isBullishPinBar(open[1], high[1], low[1], close[1])
 bullishEngulfingDetected = isBullishEngulfing()
 bullishPatternConfirmed = bullishPinDetected or bullishEngulfingDetected
-bullishSetup = bullishBias and (nearS1 or nearPP) and bullishPatternConfirmed
+
+// Bullish setup: If requirePattern is false, only need bias + level proximity
+bullishSetup = bullishBias and (nearS1 or nearPP) and (not requirePattern or bullishPatternConfirmed)
 
 bearishPinDetected = isBearishPinBar(open[1], high[1], low[1], close[1])
 bearishEngulfingDetected = isBearishEngulfing()
 bearishPatternConfirmed = bearishPinDetected or bearishEngulfingDetected
-bearishSetup = bearishBias and (nearR1 or nearPP) and bearishPatternConfirmed
+
+// Bearish setup: If requirePattern is false, only need bias + level proximity
+bearishSetup = bearishBias and (nearR1 or nearPP) and (not requirePattern or bearishPatternConfirmed)
 
 // Confirm signals on bar close
 longSignal = bullishSetup and barstate.isconfirmed

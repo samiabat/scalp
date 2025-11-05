@@ -56,6 +56,8 @@
 input double   StopLossPips = 15;                 // Stop Loss in pips
 input double   TakeProfit1Pips = 20;              // Take Profit 1 in pips
 input double   TakeProfit2Pips = 40;              // Take Profit 2 in pips
+input double   TolerancePips = 10;                // Pivot level tolerance in pips
+input bool     RequirePattern = false;            // Require candlestick pattern (false = pivot touch only)
 
 //--- Indicator buffers
 double BuySignalBuffer[];
@@ -159,7 +161,7 @@ int OnCalculate(const int rates_total,
       //--- Check for bullish setup
       if(bullishBias)
       {
-         double tolerance = 5 * g_pipValue;
+         double tolerance = TolerancePips * g_pipValue;
          bool nearS1 = MathAbs(close[i] - g_S1) <= tolerance;
          bool nearPP = MathAbs(close[i] - g_PP) <= tolerance;
          
@@ -167,8 +169,10 @@ int OnCalculate(const int rates_total,
          {
             bool isBullishPinBar = IsBullishPinBar(open[i], high[i], low[i], close[i]);
             bool isBullishEngulfing = IsBullishEngulfing(open[i], close[i], open[i-1], close[i-1]);
+            bool patternConfirmed = isBullishPinBar || isBullishEngulfing;
             
-            if(isBullishPinBar || isBullishEngulfing)
+            // Show signal if pattern not required OR pattern is confirmed
+            if(!RequirePattern || patternConfirmed)
             {
                BuySignalBuffer[i] = low[i] - 5 * g_pipValue;
                
@@ -193,7 +197,7 @@ int OnCalculate(const int rates_total,
       //--- Check for bearish setup
       if(bearishBias)
       {
-         double tolerance = 5 * g_pipValue;
+         double tolerance = TolerancePips * g_pipValue;
          bool nearR1 = MathAbs(close[i] - g_R1) <= tolerance;
          bool nearPP = MathAbs(close[i] - g_PP) <= tolerance;
          
@@ -201,8 +205,10 @@ int OnCalculate(const int rates_total,
          {
             bool isBearishPinBar = IsBearishPinBar(open[i], high[i], low[i], close[i]);
             bool isBearishEngulfing = IsBearishEngulfing(open[i], close[i], open[i-1], close[i-1]);
+            bool patternConfirmed = isBearishPinBar || isBearishEngulfing;
             
-            if(isBearishPinBar || isBearishEngulfing)
+            // Show signal if pattern not required OR pattern is confirmed
+            if(!RequirePattern || patternConfirmed)
             {
                SellSignalBuffer[i] = high[i] + 5 * g_pipValue;
                
