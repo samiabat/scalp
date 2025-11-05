@@ -1,6 +1,10 @@
 # XAU/USD M15 Scalping Expert Advisor
 
-A professional MetaTrader 5 Expert Advisor for scalping XAU/USD (Gold) on the M15 timeframe using daily pivot points and candlestick patterns.
+A professional MetaTrader 4/5 Expert Advisor for scalping XAU/USD (Gold) on the M15 timeframe using daily pivot points and candlestick patterns.
+
+**Available Versions:**
+- `XAUUSD_M15_Scalper.mq5` - For MetaTrader 5
+- `XAUUSD_M15_Scalper.mq4` - For MetaTrader 4
 
 ## Features
 
@@ -39,6 +43,7 @@ Requires one of the following candlestick patterns:
 
 ## Installation
 
+### For MetaTrader 5:
 1. Copy `XAUUSD_M15_Scalper.mq5` to your MetaTrader 5 installation directory:
    ```
    C:\Program Files\MetaTrader 5\MQL5\Experts\
@@ -46,6 +51,18 @@ Requires one of the following candlestick patterns:
    Or through MetaTrader:
    ```
    File → Open Data Folder → MQL5 → Experts
+   ```
+
+2. Compile the Expert Advisor in MetaEditor (F7) or it will auto-compile when you drag it to a chart
+
+### For MetaTrader 4:
+1. Copy `XAUUSD_M15_Scalper.mq4` to your MetaTrader 4 installation directory:
+   ```
+   C:\Program Files\MetaTrader 4\MQL4\Experts\
+   ```
+   Or through MetaTrader:
+   ```
+   File → Open Data Folder → MQL4 → Experts
    ```
 
 2. Compile the Expert Advisor in MetaEditor (F7) or it will auto-compile when you drag it to a chart
@@ -60,7 +77,7 @@ Requires one of the following candlestick patterns:
 
 ## Usage Instructions
 
-1. Open MetaTrader 5
+1. Open MetaTrader 4 or 5
 2. Navigate to XAU/USD symbol
 3. Set timeframe to M15 (15 minutes)
 4. Drag the Expert Advisor onto the chart
@@ -87,7 +104,7 @@ Trading foreign exchange and gold carries a high level of risk and may not be su
 
 ## System Requirements
 
-- MetaTrader 5 build 3000+
+- MetaTrader 4 (build 1170+) or MetaTrader 5 (build 3000+)
 - Account with XAU/USD trading enabled
 - Sufficient margin for position sizing
 

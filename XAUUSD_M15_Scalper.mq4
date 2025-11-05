@@ -1,5 +1,5 @@
 //+------------------------------------------------------------------+
-//|                                          XAUUSD_M15_Scalper.mq5 |
+//|                                          XAUUSD_M15_Scalper.mq4 |
 //|                                     XAU/USD M15 Scalping Expert |
 //|                                                                  |
 //+------------------------------------------------------------------+
@@ -12,12 +12,11 @@
 input double RiskPercent = 1.0;           // Risk per trade (%)
 input int MagicNumber = 123456;           // Magic number
 input double MinWickBodyRatio = 2.0;      // Minimum wick to body ratio for pin bars
+input int Slippage = 3;                   // Maximum slippage in points
 
 // Global variables
 double PP, R1, R2, S1, S2;                // Pivot points
 datetime lastCalculationDate = 0;         // Last pivot calculation date
-bool newBar = false;                      // New bar flag
-bool partialTakeProfitDone = false;       // Track if partial TP has been taken
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
@@ -44,37 +43,27 @@ void OnTick()
 {
    // Check for new bar
    static datetime lastBarTime = 0;
-   datetime currentBarTime = iTime(_Symbol, PERIOD_M15, 0);
+   datetime currentBarTime = iTime(Symbol(), PERIOD_M15, 0);
    
-   if(currentBarTime != lastBarTime)
-   {
-      newBar = true;
-      lastBarTime = currentBarTime;
-   }
-   else
-   {
-      newBar = false;
-   }
+   if(currentBarTime == lastBarTime) return;
+   lastBarTime = currentBarTime;
    
    // Update pivots daily
-   datetime currentDate = iTime(_Symbol, PERIOD_D1, 0);
+   datetime currentDate = iTime(Symbol(), PERIOD_D1, 0);
    if(currentDate != lastCalculationDate)
    {
       CalculatePivots();
       lastCalculationDate = currentDate;
    }
    
-   // Manage existing positions for partial take profit
+   // Manage existing positions
    ManagePositions();
-   
-   // Only trade on new bar close
-   if(!newBar) return;
    
    // Check if we already have an open position
    if(HasOpenPosition()) return;
    
    // Get current price
-   double close = iClose(_Symbol, PERIOD_M15, 1);
+   double close = iClose(Symbol(), PERIOD_M15, 1);
    
    // Determine trend direction
    bool longTrend = close > PP;
@@ -110,40 +99,34 @@ void OnTick()
 //+------------------------------------------------------------------+
 void ManagePositions()
 {
-   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
    {
-      ulong ticket = PositionGetTicket(i);
-      if(!PositionSelectByTicket(ticket)) continue;
+      if(!OrderSelect(i, SELECT_BY_POS, MODE_TRADES)) continue;
+      if(OrderSymbol() != Symbol()) continue;
+      if(OrderMagicNumber() != MagicNumber) continue;
       
-      if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
-      if(PositionGetInteger(POSITION_MAGIC) != MagicNumber) continue;
-      
-      double positionOpenPrice = PositionGetDouble(POSITION_PRICE_OPEN);
-      double currentVolume = PositionGetDouble(POSITION_VOLUME);
-      long positionType = PositionGetInteger(POSITION_TYPE);
-      string comment = PositionGetString(POSITION_COMMENT);
+      double positionOpenPrice = OrderOpenPrice();
+      double currentVolume = OrderLots();
+      int orderType = OrderType();
+      string comment = OrderComment();
       
       // Check if partial TP already taken
       if(StringFind(comment, "Partial") >= 0) continue;
       
-      double currentPrice = (positionType == POSITION_TYPE_BUY) ? 
-                            SymbolInfoDouble(_Symbol, SYMBOL_BID) : 
-                            SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-      
       bool shouldTakePartial = false;
       
-      if(positionType == POSITION_TYPE_BUY)
+      if(orderType == OP_BUY)
       {
          // Check if price reached R1 for long positions
-         if(currentPrice >= R1)
+         if(Bid >= R1)
          {
             shouldTakePartial = true;
          }
       }
-      else if(positionType == POSITION_TYPE_SELL)
+      else if(orderType == OP_SELL)
       {
          // Check if price reached S1 for short positions
-         if(currentPrice <= S1)
+         if(Ask <= S1)
          {
             shouldTakePartial = true;
          }
@@ -152,27 +135,15 @@ void ManagePositions()
       // Close 50% of position
       if(shouldTakePartial)
       {
-         double partialVolume = currentVolume * 0.5;
-         double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
-         double lotStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
-         
-         partialVolume = MathFloor(partialVolume / lotStep) * lotStep;
+         double partialVolume = NormalizeDouble(currentVolume * 0.5, 2);
+         double minLot = MarketInfo(Symbol(), MODE_MINLOT);
          
          if(partialVolume >= minLot)
          {
-            MqlTradeRequest request = {};
-            MqlTradeResult result = {};
-            
-            request.action = TRADE_ACTION_DEAL;
-            request.position = ticket;
-            request.symbol = _Symbol;
-            request.volume = partialVolume;
-            request.type = (positionType == POSITION_TYPE_BUY) ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
-            request.price = currentPrice;
-            request.magic = MagicNumber;
-            request.comment = "Partial TP at pivot";
-            
-            if(OrderSend(request, result))
+            bool result = OrderClose(OrderTicket(), partialVolume, 
+                                    orderType == OP_BUY ? Bid : Ask, 
+                                    Slippage, clrGreen);
+            if(result)
             {
                Print("Partial take profit executed: 50% at pivot level");
             }
@@ -187,9 +158,9 @@ void ManagePositions()
 void CalculatePivots()
 {
    // Get previous day's HLC
-   double prevHigh = iHigh(_Symbol, PERIOD_D1, 1);
-   double prevLow = iLow(_Symbol, PERIOD_D1, 1);
-   double prevClose = iClose(_Symbol, PERIOD_D1, 1);
+   double prevHigh = iHigh(Symbol(), PERIOD_D1, 1);
+   double prevLow = iLow(Symbol(), PERIOD_D1, 1);
+   double prevClose = iClose(Symbol(), PERIOD_D1, 1);
    
    // Calculate pivot point
    PP = (prevHigh + prevLow + prevClose) / 3.0;
@@ -210,8 +181,8 @@ void CalculatePivots()
 //+------------------------------------------------------------------+
 bool IsInPullbackZone(bool isLong)
 {
-   double low = iLow(_Symbol, PERIOD_M15, 1);
-   double high = iHigh(_Symbol, PERIOD_M15, 1);
+   double low = iLow(Symbol(), PERIOD_M15, 1);
+   double high = iHigh(Symbol(), PERIOD_M15, 1);
    
    if(isLong)
    {
@@ -230,10 +201,10 @@ bool IsInPullbackZone(bool isLong)
 //+------------------------------------------------------------------+
 bool IsBullishPinBar(int shift)
 {
-   double open = iOpen(_Symbol, PERIOD_M15, shift);
-   double close = iClose(_Symbol, PERIOD_M15, shift);
-   double high = iHigh(_Symbol, PERIOD_M15, shift);
-   double low = iLow(_Symbol, PERIOD_M15, shift);
+   double open = iOpen(Symbol(), PERIOD_M15, shift);
+   double close = iClose(Symbol(), PERIOD_M15, shift);
+   double high = iHigh(Symbol(), PERIOD_M15, shift);
+   double low = iLow(Symbol(), PERIOD_M15, shift);
    
    double body = MathAbs(close - open);
    double lowerWick = MathMin(open, close) - low;
@@ -253,10 +224,10 @@ bool IsBullishPinBar(int shift)
 //+------------------------------------------------------------------+
 bool IsBearishPinBar(int shift)
 {
-   double open = iOpen(_Symbol, PERIOD_M15, shift);
-   double close = iClose(_Symbol, PERIOD_M15, shift);
-   double high = iHigh(_Symbol, PERIOD_M15, shift);
-   double low = iLow(_Symbol, PERIOD_M15, shift);
+   double open = iOpen(Symbol(), PERIOD_M15, shift);
+   double close = iClose(Symbol(), PERIOD_M15, shift);
+   double high = iHigh(Symbol(), PERIOD_M15, shift);
+   double low = iLow(Symbol(), PERIOD_M15, shift);
    
    double body = MathAbs(close - open);
    double upperWick = high - MathMax(open, close);
@@ -278,10 +249,10 @@ bool IsBullishEngulfing(int shift)
 {
    if(shift < 1) return false;
    
-   double open1 = iOpen(_Symbol, PERIOD_M15, shift + 1);
-   double close1 = iClose(_Symbol, PERIOD_M15, shift + 1);
-   double open2 = iOpen(_Symbol, PERIOD_M15, shift);
-   double close2 = iClose(_Symbol, PERIOD_M15, shift);
+   double open1 = iOpen(Symbol(), PERIOD_M15, shift + 1);
+   double close1 = iClose(Symbol(), PERIOD_M15, shift + 1);
+   double open2 = iOpen(Symbol(), PERIOD_M15, shift);
+   double close2 = iClose(Symbol(), PERIOD_M15, shift);
    
    // Previous candle is bearish, current is bullish and engulfs previous
    if(close1 < open1 && close2 > open2 && open2 < close1 && close2 > open1)
@@ -299,10 +270,10 @@ bool IsBearishEngulfing(int shift)
 {
    if(shift < 1) return false;
    
-   double open1 = iOpen(_Symbol, PERIOD_M15, shift + 1);
-   double close1 = iClose(_Symbol, PERIOD_M15, shift + 1);
-   double open2 = iOpen(_Symbol, PERIOD_M15, shift);
-   double close2 = iClose(_Symbol, PERIOD_M15, shift);
+   double open1 = iOpen(Symbol(), PERIOD_M15, shift + 1);
+   double close1 = iClose(Symbol(), PERIOD_M15, shift + 1);
+   double open2 = iOpen(Symbol(), PERIOD_M15, shift);
+   double close2 = iClose(Symbol(), PERIOD_M15, shift);
    
    // Previous candle is bullish, current is bearish and engulfs previous
    if(close1 > open1 && close2 < open2 && open2 > close1 && close2 < open1)
@@ -318,13 +289,11 @@ bool IsBearishEngulfing(int shift)
 //+------------------------------------------------------------------+
 bool HasOpenPosition()
 {
-   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
    {
-      ulong ticket = PositionGetTicket(i);
-      if(PositionSelectByTicket(ticket))
+      if(OrderSelect(i, SELECT_BY_POS, MODE_TRADES))
       {
-         if(PositionGetString(POSITION_SYMBOL) == _Symbol && 
-            PositionGetInteger(POSITION_MAGIC) == MagicNumber)
+         if(OrderSymbol() == Symbol() && OrderMagicNumber() == MagicNumber)
          {
             return true;
          }
@@ -338,11 +307,10 @@ bool HasOpenPosition()
 //+------------------------------------------------------------------+
 void OpenLongPosition()
 {
-   double low = iLow(_Symbol, PERIOD_M15, 1);
-   double close = iClose(_Symbol, PERIOD_M15, 1);
+   double low = iLow(Symbol(), PERIOD_M15, 1);
    
    // Entry at current ask price
-   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double ask = Ask;
    
    // Stop loss below signal candle low
    double sl = low;
@@ -351,34 +319,18 @@ void OpenLongPosition()
    double risk = ask - sl;
    if(risk <= 0) return;
    
-   // First target: next pivot (R1)
-   double tp1 = R1;
-   
-   // Second target: 2x risk
-   double tp2 = ask + (2.0 * risk);
-   
-   // Use the farther target
-   double tp = tp2;
+   // Take profit at 2x risk
+   double tp = ask + (2.0 * risk);
    
    // Calculate lot size based on risk
    double lotSize = CalculateLotSize(risk);
    if(lotSize <= 0) return;
    
    // Place order
-   MqlTradeRequest request = {};
-   MqlTradeResult result = {};
+   int ticket = OrderSend(Symbol(), OP_BUY, lotSize, ask, Slippage, sl, tp, 
+                          "Long Scalp", MagicNumber, 0, clrGreen);
    
-   request.action = TRADE_ACTION_DEAL;
-   request.symbol = _Symbol;
-   request.volume = lotSize;
-   request.type = ORDER_TYPE_BUY;
-   request.price = ask;
-   request.sl = sl;
-   request.tp = tp;
-   request.magic = MagicNumber;
-   request.comment = "Long Scalp";
-   
-   if(OrderSend(request, result))
+   if(ticket > 0)
    {
       Print("Long position opened at ", ask, " SL: ", sl, " TP: ", tp);
    }
@@ -393,11 +345,10 @@ void OpenLongPosition()
 //+------------------------------------------------------------------+
 void OpenShortPosition()
 {
-   double high = iHigh(_Symbol, PERIOD_M15, 1);
-   double close = iClose(_Symbol, PERIOD_M15, 1);
+   double high = iHigh(Symbol(), PERIOD_M15, 1);
    
    // Entry at current bid price
-   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double bid = Bid;
    
    // Stop loss above signal candle high
    double sl = high;
@@ -406,39 +357,20 @@ void OpenShortPosition()
    double risk = sl - bid;
    if(risk <= 0) return;
    
-   // First target: next pivot (S1)
-   double tp1 = S1;
-   
-   // Second target: 2x risk
-   double tp2 = bid - (2.0 * risk);
-   
-   // Use the farther target
-   double tp = tp2;
+   // Take profit at 2x risk
+   double tp = bid - (2.0 * risk);
    
    // Calculate lot size based on risk
    double lotSize = CalculateLotSize(risk);
    if(lotSize <= 0) return;
    
    // Place order
-   MqlTradeRequest request = {};
-   MqlTradeResult result = {};
+   int ticket = OrderSend(Symbol(), OP_SELL, lotSize, bid, Slippage, sl, tp, 
+                          "Short Scalp", MagicNumber, 0, clrRed);
    
-   request.action = TRADE_ACTION_DEAL;
-   request.symbol = _Symbol;
-   request.volume = lotSize;
-   request.type = ORDER_TYPE_SELL;
-   request.price = bid;
-   request.sl = sl;
-   request.tp = tp;
-   request.magic = MagicNumber;
-   request.comment = "Short Scalp";
-   
-   if(OrderSend(request, result))
+   if(ticket > 0)
    {
       Print("Short position opened at ", bid, " SL: ", sl, " TP: ", tp);
-      
-      // Note: For partial close at 50% at next pivot, this would need to be managed
-      // separately with a trade management function in OnTick checking distance to R1/S1
    }
    else
    {
@@ -451,22 +383,22 @@ void OpenShortPosition()
 //+------------------------------------------------------------------+
 double CalculateLotSize(double riskInPrice)
 {
-   double accountBalance = AccountInfoDouble(ACCOUNT_BALANCE);
+   double accountBalance = AccountBalance();
    double riskAmount = accountBalance * RiskPercent / 100.0;
    
-   double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
-   double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   double tickValue = MarketInfo(Symbol(), MODE_TICKVALUE);
+   double tickSize = MarketInfo(Symbol(), MODE_TICKSIZE);
    
    if(tickSize == 0 || riskInPrice == 0) return 0;
    
    double lotSize = riskAmount / (riskInPrice / tickSize * tickValue);
    
    // Normalize lot size
-   double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
-   double maxLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
-   double lotStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   double minLot = MarketInfo(Symbol(), MODE_MINLOT);
+   double maxLot = MarketInfo(Symbol(), MODE_MAXLOT);
+   double lotStep = MarketInfo(Symbol(), MODE_LOTSTEP);
    
-   lotSize = MathFloor(lotSize / lotStep) * lotStep;
+   lotSize = NormalizeDouble(MathFloor(lotSize / lotStep) * lotStep, 2);
    lotSize = MathMax(minLot, MathMin(maxLot, lotSize));
    
    return lotSize;
