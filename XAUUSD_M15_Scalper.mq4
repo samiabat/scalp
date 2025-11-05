@@ -135,8 +135,11 @@ void ManagePositions()
       // Close 50% of position
       if(shouldTakePartial)
       {
-         double partialVolume = NormalizeDouble(currentVolume * 0.5, 2);
          double minLot = MarketInfo(Symbol(), MODE_MINLOT);
+         double lotStep = MarketInfo(Symbol(), MODE_LOTSTEP);
+         int lotDigits = (int)MathLog10(1.0 / lotStep);
+         
+         double partialVolume = NormalizeDouble(currentVolume * 0.5, lotDigits);
          
          if(partialVolume >= minLot)
          {
@@ -397,8 +400,9 @@ double CalculateLotSize(double riskInPrice)
    double minLot = MarketInfo(Symbol(), MODE_MINLOT);
    double maxLot = MarketInfo(Symbol(), MODE_MAXLOT);
    double lotStep = MarketInfo(Symbol(), MODE_LOTSTEP);
+   int lotDigits = (int)MathLog10(1.0 / lotStep);
    
-   lotSize = NormalizeDouble(MathFloor(lotSize / lotStep) * lotStep, 2);
+   lotSize = NormalizeDouble(MathFloor(lotSize / lotStep) * lotStep, lotDigits);
    lotSize = MathMax(minLot, MathMin(maxLot, lotSize));
    
    return lotSize;

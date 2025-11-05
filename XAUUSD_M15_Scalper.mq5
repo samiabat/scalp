@@ -17,7 +17,6 @@ input double MinWickBodyRatio = 2.0;      // Minimum wick to body ratio for pin 
 double PP, R1, R2, S1, S2;                // Pivot points
 datetime lastCalculationDate = 0;         // Last pivot calculation date
 bool newBar = false;                      // New bar flag
-bool partialTakeProfitDone = false;       // Track if partial TP has been taken
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
@@ -156,7 +155,7 @@ void ManagePositions()
          double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
          double lotStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
          
-         partialVolume = MathFloor(partialVolume / lotStep) * lotStep;
+         partialVolume = MathRound(partialVolume / lotStep) * lotStep;
          
          if(partialVolume >= minLot)
          {
@@ -351,14 +350,8 @@ void OpenLongPosition()
    double risk = ask - sl;
    if(risk <= 0) return;
    
-   // First target: next pivot (R1)
-   double tp1 = R1;
-   
-   // Second target: 2x risk
-   double tp2 = ask + (2.0 * risk);
-   
-   // Use the farther target
-   double tp = tp2;
+   // Take profit at 2x risk reward ratio
+   double tp = ask + (2.0 * risk);
    
    // Calculate lot size based on risk
    double lotSize = CalculateLotSize(risk);
@@ -406,14 +399,8 @@ void OpenShortPosition()
    double risk = sl - bid;
    if(risk <= 0) return;
    
-   // First target: next pivot (S1)
-   double tp1 = S1;
-   
-   // Second target: 2x risk
-   double tp2 = bid - (2.0 * risk);
-   
-   // Use the farther target
-   double tp = tp2;
+   // Take profit at 2x risk reward ratio
+   double tp = bid - (2.0 * risk);
    
    // Calculate lot size based on risk
    double lotSize = CalculateLotSize(risk);
@@ -436,9 +423,6 @@ void OpenShortPosition()
    if(OrderSend(request, result))
    {
       Print("Short position opened at ", bid, " SL: ", sl, " TP: ", tp);
-      
-      // Note: For partial close at 50% at next pivot, this would need to be managed
-      // separately with a trade management function in OnTick checking distance to R1/S1
    }
    else
    {
